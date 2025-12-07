@@ -4,13 +4,14 @@ WoW addon displaying Blizzard's Assisted Combat suggestions with keybinds. Lua +
 
 ## Critical Workflow
 
-1. **NEVER guess WoW API behavior** — Verify with `/script` commands in-game first
+1. **NEVER guess WoW API behavior** — Verify with `/script` commands in-game or check `R:\WOW\00-SOURCE\WowUISource`
 2. **Propose before implementing** — Describe changes, ask "Should I proceed?"
-3. **Blizzard source reference**: `R:\WOW\00-SOURCE\WowUISource` when needed
+3. **Test with debug commands** — Use `/jac test`, `/jac modules`, `/jac formcheck` to validate changes
+4. **Build before release** — Run `.\build.ps1` (PowerShell) to create distributable ZIP in `dist/`
 
 ## Architecture (Load Order Matters)
 
-10 LibStub modules in `JustAC.toc` — edit in dependency order:
+10 LibStub modules in `JustAC.toc` — **MUST edit in dependency order**:
 
 ```
 BlizzardAPI → FormCache → MacroParser → ActionBarScanner → RedundancyFilter
@@ -18,16 +19,19 @@ BlizzardAPI → FormCache → MacroParser → ActionBarScanner → RedundancyFil
                               SpellQueue → UIManager → DebugCommands → Options → JustAC
 ```
 
-| Module | Role | Key Exports |
-|--------|------|-------------|
-| `BlizzardAPI.lua` | `C_AssistedCombat` wrappers, profile access | `GetProfile()`, `GetSpellInfo()` |
-| `FormCache.lua` | Shapeshift form state | `GetActiveForm()`, `GetFormIDBySpellID()` |
-| `MacroParser.lua` | `[mod]`, `[form]`, `[spec]` parsing | `GetMacroSpellInfo()` |
-| `ActionBarScanner.lua` | Spell→keybind lookup | `GetSpellHotkey()` |
-| `RedundancyFilter.lua` | Hide active buffs/forms | `IsSpellRedundant()` |
-| `SpellQueue.lua` | Throttled spell queue | `GetCurrentSpellQueue()` |
-| `UIManager.lua` | Icon rendering + glows | `RenderSpellQueue()` |
-| `JustAC.lua` | Core addon, events, defensives | `OnInitialize()`, `OnUpdate()` |
+| Module | Role | Key Exports | Current Version |
+|--------|------|-------------|-----------------|
+| `Locale.lua` | AceLocale-3.0 localization (6 languages) | `L` global | N/A (not LibStub) |
+| `BlizzardAPI.lua` | `C_AssistedCombat` wrappers, profile access | `GetProfile()`, `GetSpellInfo()` | v14 |
+| `FormCache.lua` | Shapeshift form state (Druid/Rogue/etc) | `GetActiveForm()`, `GetFormIDBySpellID()` | v5 |
+| `MacroParser.lua` | `[mod]`, `[form]`, `[spec]` conditional parsing | `GetMacroSpellInfo()`, quality scoring | v11 |
+| `ActionBarScanner.lua` | Spell→keybind lookup, slot caching | `GetSpellHotkey()`, `FindSpellInSlots()` | v9 |
+| `RedundancyFilter.lua` | Hide active buffs/forms | `IsSpellRedundant()` | N/A |
+| `SpellQueue.lua` | Throttled spell queue, proc detection | `GetCurrentSpellQueue()`, blacklist | v24 |
+| `UIManager.lua` | Icon rendering + glows, Masque integration | `RenderSpellQueue()`, frame management | v12 |
+| `DebugCommands.lua` | In-game diagnostics | `/jac test`, `/jac modules` | v1 |
+| `Options.lua` | AceConfig UI panel | Settings registration | N/A |
+| `JustAC.lua` | Core addon, events, defensive cooldowns | `OnInitialize()`, `OnUpdate()` | N/A (main addon) |
 
 ## Required Patterns
 
@@ -102,6 +106,19 @@ Secret handling: `BlizzardAPI.IsSecretValue()` — fail-open design (shows extra
 
 ## Reference Docs
 
-- `Documentation/STYLE_GUIDE_JUSTAC.md` — Full coding conventions
-- `Documentation/ASSISTED_COMBAT_API_DEEP_DIVE.md` — C_AssistedCombat reference
-- `Documentation/MACRO_PARSING_DEEP_DIVE.md` — Macro conditional parsing
+- `Documentation/STYLE_GUIDE_JUSTAC.md` — Full coding conventions (843 lines)
+- `Documentation/ASSISTED_COMBAT_API_DEEP_DIVE.md` — C_AssistedCombat reference (717 lines)
+- `Documentation/MACRO_PARSING_DEEP_DIVE.md` — Macro conditional parsing (904 lines)
+- `Documentation/12.0_COMPATIBILITY.md` — API compatibility notes
+- `README.md` — User-facing docs, installation, credits
+- `CHANGELOG.md` — Release history (GPL-3.0-or-later since v2.95)
+
+## Build & Release
+
+PowerShell script `build.ps1` creates distributable package:
+- Extracts version from `JustAC.toc` (currently 2.97)
+- Packages core `.lua` files + `Libs/` folder
+- Removes duplicate nested lib folders (common packaging error)
+- Creates `dist/JustAC-<version>.zip` ready for CurseForge/GitHub
+
+**Before release:** Test with `/jac modules` + in-game rotation to verify all modules loaded.
