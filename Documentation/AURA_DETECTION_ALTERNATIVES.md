@@ -172,60 +172,37 @@ end
 
 **Event:** `COMBAT_LOG_EVENT_UNFILTERED`
 
-```lua
--- Track aura applications/removals via combat log
-local activeBuffs = {}
-
-local function OnCombatLogEvent()
-    local timestamp, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellID, spellName = CombatLogGetCurrentEventInfo()
-    
-    local playerGUID = UnitGUID("player")
-    if destGUID ~= playerGUID then return end
-    
-    if subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_REFRESH" then
-        activeBuffs[spellID] = true
-    elseif subevent == "SPELL_AURA_REMOVED" then
-        activeBuffs[spellID] = nil
-    end
-end
-
--- Check cache
-local function HasBuffBySpellID_CombatLog(spellID)
-    return activeBuffs[spellID] == true
-end
-```
-
-**Advantages:**
-- Combat log is NOT affected by secret values
-- Reliable, always works
-- No API calls needed (event-driven)
-
-**Disadvantages:**
-- Requires tracking from addon load (misses pre-existing buffs)
-- Needs COMBAT_LOG_EVENT_UNFILTERED registration
-- Memory overhead for tracking
+⚠️ **NOT AVAILABLE IN 12.0** - Combat log access is also restricted by secrets
 
 ## Recommended Strategy
 
 **Layered approach** - try methods in order until one works:
 
 ```lua
-local function HasBuffBySpellID_Smart(spellID)
-    -- Try 1: Direct lookup (best if not secret)
+local function HasBuffBySpellID_Smart(spellID, spellName)
+    -- Try 1: Direct lookup by spell ID (best if not secret)
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
         if auraData then
             if not (issecretvalue and issecretvalue(auraData.spellId)) then
                 return true  -- Has buff, not secret
             end
+            -- Fall through if secret
         else
             return false  -- Definitely doesn't have it
         end
     end
     
-    -- Try 2: Combat log cache (if we're tracking)
-    if activeBuffs[spellID] ~= nil then
-        return activeBuffs[spellID]
+    -- Try 2: Lookup by spell name (if provided and different API path)
+    if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+        local auraData = C_UnitAuras.GetAuraDataBySpellName("player", spellName, "HELPFUL")
+        if auraData then
+            if not (issecretvalue and (issecretvalue(auraData.spellId) or issecretvalue(auraData.name))) then
+                return true  -- Has buff, not secret
+            end
+        else
+            return false  -- Doesn't have it
+        end
     end
     
     -- Try 3: Fallback to index iteration (current method)
@@ -236,14 +213,15 @@ end
 
 ## Testing Priority
 
-1. **GetPlayerAuraBySpellID** - Most promising, direct lookup
-2. **Combat log tracking** - Guaranteed to work, but needs setup
-3. **Spell name lookup** - Fallback for known spell names
-4. **Slot-based access** - Alternative iteration method
+1. **GetPlayerAuraBySpellID** - Most promising, direct lookup by spell ID
+2. **GetAuraDataBySpellName** - Alternative using spell names
+3. **Slot-based access** - Different iteration method
+4. **Hardcoded filtering** - Current fallback (hide common buffs when secrets detected)
 
 ## Implementation Notes
 
-- Test each method in 12.0 to see which return secrets
-- GetPlayerAuraBySpellID is the best candidate (targeted query)
-- Combat log should be implemented as ultimate fallback
-- Can mix methods: use GetPlayerAuraBySpellID for common buffs, combat log for everything else
+- Test GetPlayerAuraBySpellID first - most likely to bypass secrets (targeted query)
+- If that fails, try spell name lookup (different code path)
+- Slot-based access is unlikely to help (same underlying data)
+- Combat log is NOT available (also restricted by secrets)
+- Current fallback: whitelist filtering + hardcoded buff lists
